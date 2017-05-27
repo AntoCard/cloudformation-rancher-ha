@@ -1,0 +1,201 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Rancher Master RDS stack",
+
+  "Parameters": {
+    "DBName": {
+      "Default": "cattle",
+      "Description" : "The database name",
+      "Type": "String"
+    },
+
+    "DBUser": {
+      "NoEcho": "true",
+      "Description" : "The database admin account username",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBPassword": {
+      "NoEcho": "true",
+      "Description" : "The database admin account password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "EngineVersion": {
+      "Description": "Database Engine version",
+      "Type": "String",
+      "Default": "5.7.11",
+      "AllowedPattern": "([5-6])\\.([0-9])\\.([a-z0-9])+",
+      "ConstraintDescription": "must be sane MySQL version pattern"
+    },
+    "DBInstanceClass": {
+      "AllowedValues": [
+        "db.m4.large",
+        "db.m4.xlarge",
+        "db.m4.2xlarge",
+        "db.m4.4xlarge",
+        "db.m4.10xlarge",
+        "db.m3.medium",
+        "db.m3.large",
+        "db.m3.xlarge",
+        "db.m3.2xlarge",
+        "db.r3.large",
+        "db.r3.xlarge",
+        "db.r3.2xlarge",
+        "db.r3.4xlarge",
+        "db.r3.8xlarge",
+        "db.t2.micro",
+        "db.t2.small",
+        "db.t2.medium",
+        "db.t2.large"
+      ],
+      "ConstraintDescription": "DB Instance type must be of a valid RDS DB Instance type",
+      "Description": "DB Instance type",
+      "Type": "String"
+    },
+    "DBInstanceIdentifier": {
+      "Description": "RDS Instance name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z-][a-zA-Z0-9-]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+    "AllocatedStorage": {
+      "Description": "Allocated storage in GB",
+      "Type": "Number",
+      "MinValue": "5",
+      "MaxValue": "3072"
+    },
+    "AutoMinorVersionUpgrade": {
+      "Description": "Control Minor version upgrade parameter",
+      "Type": "String",
+      "AllowedValues": ["true", "false"],
+      "Default": "true",
+      "ConstraintDescription": "Must be true or false"
+    },
+    "BackupRetentionPeriod": {
+      "Description": "Backup retention period",
+      "Type": "Number",
+      "MinValue": "0",
+      "MaxValue": "35",
+      "ConstraintDescription": "Must be 0 (to disable) or up to 35 days"
+    },
+    "DBSnapshotIdentifier": {
+      "Description": "Snapshot to be restored, if empty new database is created",
+      "Type": "String",
+      "Default": ""
+    },
+    "DBSubnetGroupName": {
+      "Description": "DB Subnet Group",
+      "Type": "String"
+    },
+    "MultiAZ": {
+      "Description": "Whether database is MultiAZ or not",
+      "Type": "String",
+      "AllowedValues": ["true", "false"],
+      "Default": "false",
+      "ConstraintDescription": "Must be true or false"
+    },
+    "PreferredBackupWindow": {
+      "Description": "Preferred Backup Window in UTC",
+      "Type": "String",
+      "AllowedPattern": "([01]?[0-9]|2[0-3]):[0-5][0-9]-([01]?[0-9]|2[0-3]):[0-5][0-9]",
+      "ConstraintDescription": "Must be at least 30 minutes; format hh24:mi-hh24:mi (for example 00:15-03:00)",
+      "Default": "02:00-04:00"
+    },
+    "PreferredMaintenanceWindow": {
+      "Description": "Preferred Backup Window in UTC",
+      "Type": "String",
+      "AllowedPattern": "(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([01]?[0-9]|2[0-3]):[0-5][0-9]-(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([01]?[0-9]|2[0-3]):[0-5][0-9]",
+      "ConstraintDescription": "Must be at least 30 minutes; format ddd:hh24:mi-hh24:mi (for example Wed:00:15-Wed:03:00)",
+      "Default": "Tue:04:01-Tue:06:00"
+    },
+    "PubliclyAccessible": {
+      "Description": "Whether database is Publicly Accessible",
+      "Type": "String",
+      "AllowedValues": ["true", "false"],
+      "Default": "false",
+      "ConstraintDescription": "Must be true or false"
+    },
+    "StorageType": {
+      "Description": "Storage Type",
+      "Type": "String",
+      "Default": "gp2",
+      "AllowedValues": ["standard", "gp2", "io1"]
+    },
+    "TagName": {
+      "Description": "Name tag",
+      "Type": "String",
+      "MaxLength": "255",
+      "ConstraintDescription": "Name Tag value length must be less than 255"
+    },
+    "TagEnv": {
+      "Description": "Environment tag",
+      "Type": "String",
+      "MaxLength": "255",
+      "ConstraintDescription": "Env Tag value length must be less than 255"
+    },
+    "VPCSecurityGroups": {
+      "Description": "List of Security Groups for this RDS Instance",
+      "Type": "CommaDelimitedList"
+    }
+  },
+
+  "Resources" : {
+    "RancherMasterDB" : {
+      "Type" : "AWS::RDS::DBInstance",
+      "Properties" : {
+        "AllocatedStorage" : { "Ref": "AllocatedStorage"},
+        "DBInstanceClass" : {"Ref": "DBInstanceClass"},
+        "Engine" : "MySQL",
+        "EngineVersion" : { "Ref": "EngineVersion"},
+        "MasterUsername" : { "Ref" : "DBUser" },
+        "MasterUserPassword" : { "Ref" : "DBPassword" },
+        "DBSubnetGroupName":  { "Ref": "DBSubnetGroupName" },
+        "AutoMinorVersionUpgrade": { "Ref": "AutoMinorVersionUpgrade"},
+        "BackupRetentionPeriod": { "Ref": "BackupRetentionPeriod" },
+        "DBSnapshotIdentifier": { "Ref": "DBSnapshotIdentifier"},
+        "MultiAZ": { "Ref": "MultiAZ"},
+        "PreferredBackupWindow": { "Ref": "PreferredBackupWindow"},
+        "PreferredMaintenanceWindow": {"Ref": "PreferredMaintenanceWindow"},
+        "PubliclyAccessible": {"Ref": "PubliclyAccessible"},
+        "StorageType": {"Ref": "StorageType"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": { "Ref": "TagName"}
+          },
+          {
+            "Key": "EnvId",
+            "Value": {"Ref": "TagEnv"}
+          },
+          {
+            "Key": "clusterid",
+            "Value": { "Fn::Join": ["-", ["mysql-rancher-master", {"Ref": "TagEnv"} ]]}
+          }
+        ],
+        "VPCSecurityGroups": { "Ref": "VPCSecurityGroups"}
+      }
+    }
+  },
+
+  "Outputs" : {
+    "DbHost": {
+      "Description": "Database Hostname",
+      "Value": { "Fn::GetAtt": [ "RancherMasterDB", "Endpoint.Address" ] }
+    },
+    "DbPort": {
+      "Description": "Database Port",
+      "Value": { "Fn::GetAtt": [ "RancherMasterDB", "Endpoint.Port" ] }
+    }
+  }
+}

@@ -1,0 +1,301 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Rancher Node Cluster",
+  "Parameters": {
+    "DesiredCapacity": {
+      "Type": "Number",
+      "Description": "Desired number of Rancher nodes",
+      "Default": 3
+    },
+    "DomainName": {
+      "Description": "Domain name for the VPC dns",
+      "Type": "String",
+      "Default": "canaryops.com."
+    },
+    "ElbSG": {
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    },
+    "EnvId": {
+      "Description": "Environment name",
+      "Type": "String"
+    },
+    "ImageId": {
+      "Type": "String"
+    },
+    "InstanceType":{
+      "Type": "String",
+      "ConstraintDescription" : "Must be a valid EC2 instance type."
+    },
+    "KeyName" : {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type" : "AWS::EC2::KeyPair::KeyName"
+    },
+    "MaxSize": {
+      "Type": "Number",
+      "Description": "Maximum number of Rancher nodes",
+      "Default": 9
+    },
+    "RancherNodeSG": {
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    },
+    "MinSize": {
+      "Type": "Number",
+      "Description": "Minimum number of Rancher nodes",
+      "Default": 3
+    },
+    "PublicSubnetIds": {
+      "Type": "CommaDelimitedList"
+    },
+    "RootEbsVolumeSize": {
+      "Description": "Size of root EBS volume in GB",
+      "Type": "Number",
+      "Default": "100",
+      "MinValue": "10",
+      "MaxValue": "16000",
+      "ConstraintDescription": "root volume size has to be between 10 and 16000 GB"
+    },
+    "Location": {
+      "Type": "String"
+    },
+    "SubnetIds": {
+      "Type": "CommaDelimitedList",
+      "Description": "List of subnets for Rancher nodes"
+    }
+  },
+  "Resources": {
+    "RancherNodeInstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["ec2.amazonaws.com"]
+              },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        },
+        "Path": "/roles/rancher-node/instance/",
+        "Policies": [
+          {
+            "PolicyName": "RancherNodeInstancePolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Action": [
+                    "ec2:DescribeInstances",
+                    "autoscaling:DescribeAutoScalingGroups",
+                    "autoscaling:DescribeAutoScalingInstances",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:DescribeStackResources"                  ],
+                  "Effect": "Allow",
+                  "Resource": "*"
+                }
+                ]
+            }
+          }
+        ]
+      }
+    },
+    "RancherNodeInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/roles/rancher-node/InstanceProfile/",
+        "Roles": [ {
+          "Ref": "RancherNodeInstanceRole"
+        } ]
+      }
+    },
+    "ServerGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "LaunchConfigurationName": {"Ref": "LaunchConfig"},
+        "MinSize": {"Ref": "MinSize"},
+        "MaxSize": {"Ref": "MaxSize"},
+        "DesiredCapacity": {"Ref": "DesiredCapacity"},
+        "VPCZoneIdentifier": {"Ref": "SubnetIds"},
+        "LoadBalancerNames" : [{"Ref": "PublicElb" }],
+        "Tags": [
+          {
+            "Key": "EnvId",
+            "Value": {"Ref": "EnvId"},
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join": ["-", [{"Ref": "EnvId"}, {"Ref": "Location"}, "rancher", "node"]] },
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Role",
+            "Value": "rancher-node",
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Location",
+            "Value": {"Ref": "Location"},
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      },
+      "UpdatePolicy": {
+        "AutoScalingRollingUpdate": {
+          "MaxBatchSize": "1",
+          "MinInstancesInService": {"Ref": "DesiredCapacity"},
+          "WaitOnResourceSignals": "true",
+          "PauseTime": "PT15M"
+        }
+      }
+    },
+    "LaunchConfig": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "files": {
+              "/etc/cloudformation-stack-name": {
+                "content": {"Ref": "AWS::StackName"},
+                "mode": "000644",
+                "owner": "root",
+                "group": "root"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "KeyName": {"Ref": "KeyName"},
+        "ImageId": {"Ref": "ImageId"},
+        "SecurityGroups": [{"Ref": "RancherNodeSG"}],
+        "AssociatePublicIpAddress": "false",
+        "IamInstanceProfile": {"Ref": "RancherNodeInstanceProfile"},
+        "InstanceType": {"Ref": "InstanceType"},
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "VolumeSize": {"Ref": "RootEbsVolumeSize"},
+              "VolumeType": "gp2"
+            }
+          }
+        ],
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -ex\n",
+
+          "#install cloud-init\n",
+          "apt-get update\n",
+          "apt-get -y install python-pip\n",
+          "pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+
+          "export PATH=/opt/aws/bin:/usr/local/bin:$PATH \n",
+
+          "# Helper function\n",
+          "function error_exit\n",
+          "{\n",
+          "  cfn-signal -e 1 -r \"$1\" ",
+              " --resource ServerGroup",
+              " --stack ", { "Ref" : "AWS::StackName" },
+              " --region ", { "Ref" : "AWS::Region" }, "\n",
+          "  exit 1\n",
+          "}\n",
+
+          "# Process CloudFormation init definitions\n",
+          "cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r LaunchConfig ",
+          "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
+          "#while ! nc -z localhost 8500; do sleep 5; done\n",
+          "sleep 120\n",
+          "# All is well so signal success\n",
+          "cfn-signal -e 0 -r \"Stack setup complete\" ",
+              " --resource ServerGroup",
+              " --stack ", { "Ref" : "AWS::StackName" },
+              " --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "#EOF"
+        ]]}}
+      }
+    },
+    "PublicLbDns": {
+      "Type": "AWS::Route53::RecordSetGroup",
+      "Properties": {
+        "HostedZoneName": { "Fn::Join": [".", [ {"Ref": "Location"}, {"Ref": "DomainName"} ]]},
+        "RecordSets": [{
+          "Name": { "Fn::Join": [".", [ {"Ref": "EnvId"}, {"Ref": "Location"}, {"Ref": "DomainName"} ]]},
+          "Type": "A",
+          "AliasTarget": {
+            "HostedZoneId": { "Fn::GetAtt": ["PublicElb", "CanonicalHostedZoneNameID"]},
+            "DNSName": {"Fn::GetAtt": ["PublicElb", "DNSName"]}
+          }
+        }
+        ]
+      }
+    },
+    "PublicElb": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "CrossZone": "true",
+        "Listeners":[
+          {
+            "InstancePort": "8080",
+            "InstanceProtocol": "HTTP",
+            "LoadBalancerPort": "80",
+            "Protocol": "HTTP"
+          },
+          {
+            "InstancePort": "8443",
+            "InstanceProtocol": "TCP",
+            "LoadBalancerPort": "443",
+            "Protocol": "TCP"
+          },
+          {
+            "InstancePort": "8000",
+            "InstanceProtocol": "HTTP",
+            "LoadBalancerPort": "8000",
+            "Protocol": "HTTP"
+          }
+        ],
+        "HealthCheck": {
+          "HealthyThreshold": "4",
+          "Interval": "6",
+          "Timeout": "5",
+          "UnhealthyThreshold": "2",
+          "Target": "HTTP:8000/dashboard/"
+        },
+        "Policies": [
+          {
+            "InstancePorts": [ "8000", "8080", "8443" ],
+            "PolicyName": "EnableProxyProtocolPolicy",
+            "PolicyType": "ProxyProtocolPolicyType",
+            "Attributes": [
+               { "Name": "ProxyProtocol", "Value": true }
+            ]
+          }
+        ],
+        "SecurityGroups": [{"Ref": "ElbSG"}],
+        "Subnets": {"Ref": "PublicSubnetIds"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {"Fn::Join": ["-", [{"Ref": "EnvId"}, {"Ref": "Location"}, "elb"]]}
+          },
+          {
+            "Key": "Location",
+            "Value": {"Ref": "Location"}
+          },
+          {
+            "Key": "EnvId",
+            "Value": {"Ref": "EnvId"}
+          },
+          {
+            "Key": "Role",
+            "Value": "LoadBalancer"
+          }
+        ]
+      }
+    }
+  }
+}

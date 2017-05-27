@@ -1,0 +1,215 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Security Groups stack",
+  "Parameters": {
+    "CidrPrefix": {
+      "Type": "String"
+    },
+    "OficcePublicIP": {
+      "Type": "String"
+    },
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id"
+    }
+  },
+  "Resources": {
+    "RancherMasterElbSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Rancher Master ELB Security Group",
+        "VpcId": {"Ref": "VpcId"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "RancherMasterElbSG"
+          },
+          {
+            "Key": "VpcId",
+            "Value": "VpcId"
+          }
+        ],
+        "SecurityGroupIngress": [
+          { "SourceSecurityGroupId": {"Ref": "RancherNodeSG"}, "FromPort": "443", "ToPort": "443", "IpProtocol": "tcp" },
+          { "SourceSecurityGroupId": {"Ref": "RancherNodeSG"}, "FromPort": "80", "ToPort": "80", "IpProtocol": "tcp" },
+          { "FromPort": "443", "ToPort": "443", "CidrIp": "192.168.0.0/16", "IpProtocol": "tcp"},
+          { "FromPort": "80", "ToPort": "80", "CidrIp": "192.168.0.0/16", "IpProtocol": "tcp"},
+          { "CidrIp": "192.168.0.0/16", "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" },
+          { "CidrIp": {"Fn::Join": [".", [{"Ref": "CidrPrefix"}, "0.0/16"]]}, "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" }
+        ]
+      }
+    },
+    "RancherMasterSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Rancher Master Security Group",
+        "VpcId": {"Ref": "VpcId"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "RancherMasterSG"
+          },
+          {
+            "Key": "VpcId",
+            "Value": "VpcId"
+          }
+        ],
+        "SecurityGroupIngress": [
+          { "SourceSecurityGroupId": {"Ref": "RancherMasterElbSG"}, "FromPort": "8080", "ToPort": "8080", "IpProtocol": "tcp" },
+          { "FromPort": "22", "ToPort": "22", "CidrIp": "192.168.0.0/16", "IpProtocol": "tcp"},
+          { "CidrIp": "192.168.0.0/16", "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" }
+        ]
+      }
+    },
+    "RancherNodeElbSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Rancher Node ELB Security Group",
+        "VpcId": {"Ref": "VpcId"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "RancherNodeElbSG"
+          },
+          {
+            "Key": "VpcId",
+            "Value": {"Ref": "VpcId"}
+          }
+        ],
+        "SecurityGroupIngress": [
+          { "FromPort": "80", "ToPort": "80", "CidrIp": "0.0.0.0/0", "IpProtocol": "tcp"},
+          { "FromPort": "443", "ToPort": "443", "CidrIp": "0.0.0.0/0", "IpProtocol": "tcp" },
+          { "FromPort": "8000", "ToPort": "8000", "CidrIp": {"Ref": "OfficePublicIP"}, "IpProtocol": "tcp" },
+          { "CidrIp": {"Fn::Join": [".", [{"Ref": "CidrPrefix"}, "0.0/16"]]}, "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" }
+        ]
+      }
+    },
+    "RancherNodeSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Rancher Node Security Group",
+        "VpcId": {"Ref": "VpcId"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "RancherNodeSG"
+          },
+          {
+            "Key": "VpcId",
+            "Value": "VpcId"
+          }
+        ],
+        "SecurityGroupIngress": [
+          { "SourceSecurityGroupId": {"Ref": "RancherNodeElbSG"}, "FromPort": "8000", "ToPort": "8000", "IpProtocol": "tcp" },
+          { "SourceSecurityGroupId": {"Ref": "RancherNodeElbSG"}, "FromPort": "8080", "ToPort": "8080", "IpProtocol": "tcp" },
+          { "SourceSecurityGroupId": {"Ref": "RancherNodeElbSG"}, "FromPort": "8443", "ToPort": "8443", "IpProtocol": "tcp" },
+          { "CidrIp": "192.168.0.0/16", "FromPort": "22", "ToPort": "22", "IpProtocol": "tcp" },
+          { "CidrIp": {"Fn::Join": [".", [{"Ref": "CidrPrefix"}, "0.0/16"]]}, "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" }
+        ]
+      }
+    },
+    "RancherMasterRdsSG":{
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Rancher Master RDS Security Group",
+        "VpcId": {"Ref": "VpcId"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "RdsSG"
+          },
+          {
+            "Key": "VpcId",
+            "Value": {"Ref": "VpcId"}
+          }
+        ],
+        "SecurityGroupIngress": [
+          { "SourceSecurityGroupId": {"Ref": "RancherMasterSG"}, "FromPort": "3306", "ToPort": "3306", "IpProtocol": "tcp"},
+          { "IpProtocol" : "tcp", "FromPort": "3306", "ToPort": "3306", "CidrIp": "192.168.0.0/16"},
+          { "CidrIp": {"Fn::Join": [".", [{"Ref": "CidrPrefix"}, "0.0/16"]]}, "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" }
+        ]
+      }
+    },
+    "AmiBuilderSG":{
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security Group for building AMIs",
+        "VpcId": {"Ref": "VpcId"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "AmiBuilderSG"
+          },
+          {
+            "Key": "VpcId",
+            "Value": {"Ref": "VpcId"}
+          }
+        ],
+        "SecurityGroupIngress": [
+          { "IpProtocol" : "tcp", "FromPort": "22", "ToPort": "22", "CidrIp": "192.168.0.0/16"},
+          { "IpProtocol" : "tcp", "FromPort": "22", "ToPort": "22", "CidrIp": "10.0.0.0/8"},
+          { "CidrIp": {"Fn::Join": [".", [{"Ref": "CidrPrefix"}, "0.0/16"]]}, "FromPort": "-1", "ToPort": "-1", "IpProtocol": "icmp" }
+        ]
+      }
+    },
+    "RancherMasterIngress8080": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "SourceSecurityGroupId": { "Ref": "RancherMasterSG"},
+        "GroupId": {"Ref": "RancherMasterSG"},
+        "FromPort": "8080",
+        "ToPort": "8080",
+        "IpProtocol": "tcp"
+      }
+    },
+   "RancherMasterIngress9345": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "SourceSecurityGroupId": { "Ref": "RancherMasterSG"},
+        "GroupId": {"Ref": "RancherMasterSG"},
+        "FromPort": "9345",
+        "ToPort": "9345",
+        "IpProtocol": "tcp"
+      }
+    },
+   "RancherNodeIngress500": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "SourceSecurityGroupId": { "Ref": "RancherNodeSG"},
+        "GroupId": {"Ref": "RancherNodeSG"},
+        "FromPort": "500",
+        "ToPort": "500",
+        "IpProtocol": "udp"
+      }
+    },
+    "RancherNodeIngress4500": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "SourceSecurityGroupId": { "Ref": "RancherNodeSG"},
+        "GroupId": {"Ref": "RancherNodeSG"},
+        "FromPort": "4500",
+        "ToPort": "4500",
+        "IpProtocol": "udp"
+      }
+    }
+  },
+  "Outputs": {
+    "RancherMasterElbSG": {
+      "Value": {"Ref": "RancherMasterElbSG"}
+    },
+    "RancherMasterSG": {
+      "Value": {"Ref": "RancherMasterSG"}
+    },
+    "RancherNodeElbSG": {
+      "Value": {"Ref": "RancherNodeElbSG"}
+    },
+    "RancherNodeSG": {
+      "Value": {"Ref": "RancherNodeSG"}
+    },
+    "RancherMasterRdsSG": {
+      "Value": {"Ref": "RancherMasterRdsSG"}
+    },
+    "AmiBuilderSG": {
+      "Value": {"Ref": "AmiBuilderSG"}
+    }
+  }
+}

@@ -5,7 +5,7 @@
     "CidrPrefix": {
       "Type": "String"
     },
-    "OficcePublicIP": {
+    "OfficePublicIP": {
       "Type": "String"
     },
     "VpcId": {
